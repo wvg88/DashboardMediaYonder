@@ -501,21 +501,26 @@ const CELLS = (() => {
   c.push([0, 0, 3]);
   return c;
 })();
+// elk blok valt over een langere tijd en remt sterk af vlak voor het landt (ease-out quint)
+const landen = t => 1 - Math.pow(1 - t, 5);
 F.maken = { span: 7.2, zc: 1.6, floor: 4.6, t0: 1.6, draw(g, s) {
-  const N = CELLS.length, T = 12, u = (s.t % T) / T;
-  const auto = u < .6 ? u / .6 : u < .82 ? 1 : 1 - ease((u - .82) / .18);
-  const p = lerp(auto, clamp((s.px - .12) / .76), s.act) * N;
+  const N = CELLS.length, VAL = 2.4, T = 13, u = (s.t % T) / T;
+  const auto = u < .62 ? u / .62 : u < .84 ? 1 : 1 - ease((u - .84) / .16);
+  const p = lerp(auto, clamp((s.px - .12) / .76), s.act) * (N - 1 + VAL);
   const done = [], fall = [];
-  CELLS.forEach(([x, y, z], i) => { const l = clamp(p - i); if (l > 0) (l < 1 ? fall : done).push({ x, y, z, l }); });
-  done.sort((a, b) => ((a.x + a.y) * 100 + a.z) - ((b.x + b.y) * 100 + b.z));
+  CELLS.forEach(([x, y, z], i) => { const l = clamp((p - i) / VAL); if (l > 0) (l < .999 ? fall : done).push({ x, y, z, l }); });
+  const diep = b => (b.x + b.y) * 100 + b.z;
+  done.sort((a, b) => diep(a) - diep(b));
   for (const b of done) g.box(b.x - 1.45, b.y - 1.45, b.z, .9, .9, .9, { sil: 'hi', tone: 'mid' });
+  for (const b of fall) b.h = b.z + (1 - landen(b.l)) * 4.2;
+  fall.sort((a, b) => (a.x + a.y) * 100 + a.h - ((b.x + b.y) * 100 + b.h));
   for (const b of fall) {
-    const z = b.z + (1 - easeOut(b.l)) * 4.2, X = b.x - 1.45, Y = b.y - 1.45;
+    const X = b.x - 1.45, Y = b.y - 1.45;
     g.loop(atZ(rr(X + .45, Y + .45, .9, .9, 0, 0, 1), b.z), { tone: 'mid', dash: [1, 3] });
-    g.line([[X + .45, Y + .45, b.z], [X + .45, Y + .45, z]], { tone: 'mid', dash: [1, 3] });
-    g.box(X, Y, z, .9, .9, .9, { sil: 'ac', tone: 'ac' });
+    g.line([[X + .45, Y + .45, b.z], [X + .45, Y + .45, b.h]], { tone: 'mid', dash: [1, 3] });
+    g.box(X, Y, b.h, .9, .9, .9, { sil: 'ac', tone: 'ac' });
   }
-  return 'blok ' + String(Math.min(N, Math.ceil(p))).padStart(2, '0') + ' / ' + N;
+  return 'blok ' + String(done.length).padStart(2, '0') + ' / ' + N;
 } };
 
 // VORMEN: een stapel platen die van rond naar vierkant, driehoek, zeshoek en vijfhoek golft
@@ -724,45 +729,69 @@ function room(g, R, Hh) {
   g.prism(atZ(fl, -.14), atZ(fl, 0), { sil: 'hi', tone: 'hi' });
   for (const k of [1, 2]) { const q = -R + k * 2 * R / 3; g.line([[q, -R, 0], [q, R, 0]], { tone: 'lo' }); g.line([[-R, q, 0], [R, q, 0]], { tone: 'lo' }); }
 }
-// een groene lijn die vanuit de cursor ontstaat, soepel door de ruimte zwieren en weer oplossen
-const LIJN = [tok('y3')], LEEF = 2.1, STAART = 1.25;
-function lijnen(g, s, u, R, Hh) {
-  const m = s.mem; if (!m.lijn) m.lijn = [{ pts: [], head: null, wacht: 0 }];
-  const now = s.t, lim = R - .25, dt = Math.min(s.dt, .05);
-  m.lijn.forEach((L, i) => {
-    L.wacht -= dt;
-    if (!L.head && L.wacht <= 0 && s.act > .4) {
-      const a = Math.random() * TAU;
-      L.head = { x: clamp(u[0], -lim, lim), y: clamp(u[1], -lim, lim), z: 1.3, a, va: (Math.random() - .5) * 4, vz: (Math.random() - .3) * 1.6, sp: 2.6 + Math.random() * .8, t0: now, f: Math.random() * TAU };
+// een groene lijn die de cursor volgt; staat de cursor 1 seconde stil, dan zwiert hij vanzelf verder door de ruimte en lost op
+const LIJN = tok('y3'), LEEF = 2.1, STAART = 1.25, STIL = 1;
+const diepte = (x, y, z) => x * VIEW[0] + y * VIEW[1] + z * VIEW[2];
+function lijnStap(s, u, R, Hh) {
+  const m = s.mem; if (!m.lijn) m.lijn = { pts: [], head: null, wacht: 0 };
+  const L = m.lijn, now = s.t, lim = R - .25, dt = Math.min(s.dt, .05), volg = s.act > .4 && s.still < STIL;
+  const tx = clamp(u[0], -lim, lim), ty = clamp(u[1], -lim, lim), tz = 1.3;
+  L.wacht -= dt;
+  if (!L.head && volg && L.wacht <= 0) L.head = { x: tx, y: ty, z: tz, vx: 0, vy: 0, vz: 0, mode: 'volg', f: Math.random() * TAU };
+  const h = L.head;
+  if (h) {
+    if (volg) {
+      // volgen: soepel naar de cursor toe glijden
+      const k = 1 - Math.exp(-dt * 12), nx = h.x + (tx - h.x) * k, ny = h.y + (ty - h.y) * k, nz = h.z + (tz - h.z) * k;
+      if (dt > 0) { h.vx = (nx - h.x) / dt; h.vy = (ny - h.y) / dt; h.vz = (nz - h.z) / dt; }
+      h.x = nx; h.y = ny; h.z = nz; h.mode = 'volg';
+    } else {
+      if (h.mode !== 'zwerf') {
+        // overgang: verder in de richting waarin de cursor bewoog
+        h.mode = 'zwerf'; h.t0 = now;
+        h.a = Math.hypot(h.vx, h.vy) > .3 ? Math.atan2(h.vy, h.vx) : Math.random() * TAU;
+        h.va = (Math.random() - .5) * 4; h.wz = (Math.random() - .5) * 1.6; h.sp = 2.6 + Math.random() * .8;
+      }
+      h.va += (Math.sin(now * 2.3 + h.f) * 5 - h.va * .8) * dt; h.a += h.va * dt;
+      h.wz += (Math.sin(now * 1.7 + h.f * 2) * 2.2 - h.wz * .6) * dt;
+      const k = 1 - Math.exp(-dt * 3);
+      h.vx += (Math.cos(h.a) * h.sp - h.vx) * k; h.vy += (Math.sin(h.a) * h.sp - h.vy) * k; h.vz += (h.wz - h.vz) * k;
+      h.x += h.vx * dt; h.y += h.vy * dt; h.z += h.vz * dt;
+      if (Math.abs(h.x) > lim) { h.x = Math.sign(h.x) * lim; h.vx = -h.vx; h.a = Math.atan2(h.vy, h.vx); }
+      if (Math.abs(h.y) > lim) { h.y = Math.sign(h.y) * lim; h.vy = -h.vy; h.a = Math.atan2(h.vy, h.vx); }
+      if (h.z < .15 || h.z > Hh - .2) { h.z = clamp(h.z, .15, Hh - .2); h.vz = -h.vz; h.wz = -h.wz; }
+      if (now - h.t0 > LEEF) { L.head = null; L.wacht = .3; }
     }
-    const h = L.head;
-    if (h) {
-      const age = now - h.t0;
-      h.va += (Math.sin(now * 2.3 + h.f) * 5 - h.va * .8) * dt;
-      h.a += h.va * dt;
-      h.vz += (Math.sin(now * 1.7 + h.f * 2) * 2.2 - h.vz * .6) * dt;
-      h.x += Math.cos(h.a) * h.sp * dt; h.y += Math.sin(h.a) * h.sp * dt; h.z += h.vz * dt;
-      if (Math.abs(h.x) > lim) { h.x = Math.sign(h.x) * lim; h.a = Math.PI - h.a; }
-      if (Math.abs(h.y) > lim) { h.y = Math.sign(h.y) * lim; h.a = -h.a; }
-      if (h.z < .15 || h.z > Hh - .2) { h.z = clamp(h.z, .15, Hh - .2); h.vz = -h.vz; }
-      L.pts.push([h.x, h.y, h.z, now]);
-      if (age > LEEF) { L.head = null; L.wacht = .25 + Math.random() * .35; }
-    }
-    while (L.pts.length && now - L.pts[0][3] > STAART) L.pts.shift();
-    const P = L.pts.map(q => g.P(q[0], q[1], q[2])), c = g.c;
-    c.setLineDash(NODASH); c.strokeStyle = LIJN[i]; c.lineWidth = g.sw * 2.8; c.lineCap = 'butt';
-    // in stukken van een paar punten tekenen: vloeiende lijn, en toch een staart die vervaagt
-    for (let k = 0; k < P.length - 1; k += 5) {
-      const e = Math.min(P.length - 1, k + 5);
-      c.globalAlpha = clamp(1 - (now - L.pts[e][3]) / STAART);
-      c.beginPath(); c.moveTo(P[k][0], P[k][1]);
-      for (let j = k + 1; j <= e; j++) c.lineTo(P[j][0], P[j][1]);
+    L.pts.push([h.x, h.y, h.z, now]);
+  }
+  while (L.pts.length && now - L.pts[0][3] > STAART) L.pts.shift();
+  // elk stukje lijn krijgt een diepte, zodat het voor of achter een object getekend kan worden
+  const segs = [];
+  for (let k = 1; k < L.pts.length; k++) { const a = L.pts[k - 1], b = L.pts[k]; segs.push({ a, b, d: diepte((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2), af: clamp(1 - (now - b[3]) / STAART), done: false }); }
+  const q = L.head ? L.pts[L.pts.length - 1] : null;
+  return { segs, kop: q ? { p: q, d: diepte(q[0], q[1], q[2]), done: false } : null };
+}
+function lijnTeken(g, lijn, tot) {
+  const segs = lijn.segs;
+  const c = g.c; c.setLineDash(NODASH); c.strokeStyle = LIJN; c.lineWidth = g.sw * 2.8; c.lineCap = 'butt';
+  let run = [];
+  const flush = () => {
+    for (let k = 0; k < run.length; k += 5) {
+      const part = run.slice(k, k + 5); c.globalAlpha = part[part.length - 1].af;
+      c.beginPath(); let p = g.P(part[0].a[0], part[0].a[1], part[0].a[2]); c.moveTo(p[0], p[1]);
+      for (const sg of part) { p = g.P(sg.b[0], sg.b[1], sg.b[2]); c.lineTo(p[0], p[1]); }
       c.stroke();
     }
-    c.lineCap = 'round';
-    c.globalAlpha = 1;
-    if (h && P.length) { const q = P[P.length - 1]; c.beginPath(); c.arc(q[0], q[1], g.sw * 2.6, 0, TAU); c.fillStyle = LIJN[i]; c.fill(); }
-  });
+    run = [];
+  };
+  for (const sg of segs) {
+    if (!sg.done && sg.d < tot) { sg.done = true; if (run.length && run[run.length - 1].b !== sg.a) flush(); run.push(sg); }
+    else if (run.length) flush();
+  }
+  flush();
+  c.globalAlpha = 1; c.lineCap = 'round';
+  const kop = lijn.kop;
+  if (kop && !kop.done && kop.d < tot) { kop.done = true; const q = g.P(kop.p[0], kop.p[1], kop.p[2]); c.beginPath(); c.arc(q[0], q[1], g.sw * 2.6, 0, TAU); c.fillStyle = LIJN; c.fill(); }
 }
 F.io = { span: 9, zc: 1.6, floor: 5.2, draw(g, s) {
   const R = 2.6, Hh = 3.4;
@@ -775,14 +804,17 @@ F.io = { span: 9, zc: 1.6, floor: 5.2, draw(g, s) {
     g.line([[o.x, o.y, 0], [o.x, o.y, o.z]], { tone: 'mid', dash: [1, 3] });
   }
   O.sort((a, b) => (a.x + a.y) - (b.x + b.y));
+  const lijn = s.mini ? null : lijnStap(s, u, R, Hh);
   let top = 0;
   for (const o of O) {
+    // lijnstukken die verder weg liggen dan dit object eerst tekenen; het object dekt ze dan af
+    if (lijn) lijnTeken(g, lijn, diepte(o.x, o.y, o.z + .55));
     if (o.k === 0) g.box(o.x - .55, o.y - .55, o.z, 1.1, 1.1, 1.1, { sil: 'hi' });
     else if (o.k === 1) g.cyl(o.x, o.y, o.z, .6, 1, { sil: 'hi', tone: 'hi' });
     else wire(g, o.x, o.y, o.z + .62, .62, .62, s.t * .5, { mer: 3 });
     top = Math.max(top, o.z);
   }
-  if (!s.mini) lijnen(g, s, u, R, Hh);
+  if (lijn) lijnTeken(g, lijn, Infinity);
   return 'hoogte ' + top.toFixed(2);
 } };
 
@@ -928,7 +960,7 @@ class Fig {
   frame(now, dt) {
     if (this.w < 8 || this.h < 8) return;
     const s = this.s, g = this.g, c = this.ctx, def = this.def, idle = now - this.touch > 1700;
-    s.dt = dt; s.dx = this.dxAcc; this.dxAcc = 0;
+    s.dt = dt; s.dx = this.dxAcc; this.dxAcc = 0; s.still = (now - this.touch) / 1000;
     if (!RM || !idle) s.t += dt;
     if (idle) { const a = s.t * .5; s.tx = .5 + .32 * Math.sin(a); s.ty = .5 + .3 * Math.sin(a * .73 + 1.3); }
     const k = 1 - Math.exp(-dt * (idle ? 2.4 : 10));
