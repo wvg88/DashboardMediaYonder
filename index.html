@@ -595,6 +595,7 @@ function wire(g, cx, cy, cz, a, c, rot, o = {}) {
   const rings = [], seg = 40;
   for (let j = 1; j < 8; j++) { const ph = -Math.PI / 2 + j * Math.PI / 8, r = a * Math.cos(ph), z = cz + c * Math.sin(ph); rings.push(Array.from({ length: seg + 1 }, (_, k) => { const t = k / seg * TAU; return [cx + r * Math.cos(t), cy + r * Math.sin(t), z]; })); }
   for (let m = 0; m < (o.mer || 5); m++) { const th = rot + m * Math.PI / (o.mer || 5); rings.push(Array.from({ length: seg + 1 }, (_, k) => { const ph = k / seg * TAU; return [cx + a * Math.cos(ph) * Math.cos(th), cy + a * Math.cos(ph) * Math.sin(th), cz + c * Math.sin(ph)]; })); }
+  if (o.M) rings.forEach(r => r.forEach(q => { const v = o.M([q[0] - cx, q[1] - cy, q[2] - cz]); q[0] = cx + v[0]; q[1] = cy + v[1]; q[2] = cz + v[2]; }));
   const all = []; rings.forEach(r => r.forEach(q => all.push(g.P(q[0], q[1], q[2]))));
   g.draw(hull(all), { tone: o.sil || 'hi' });
   const front = q => ((q[0] - cx) / (a * a)) * VIEW[0] + ((q[1] - cy) / (a * a)) * VIEW[1] + ((q[2] - cz) / (c * c)) * VIEW[2] > 0;
@@ -793,12 +794,39 @@ function lijnTeken(g, lijn, tot) {
   const kop = lijn.kop;
   if (kop && !kop.done && kop.d < tot) { kop.done = true; const q = g.P(kop.p[0], kop.p[1], kop.p[2]); c.beginPath(); c.arc(q[0], q[1], g.sw * 2.6, 0, TAU); c.fillStyle = LIJN; c.fill(); }
 }
+// draaiing om drie assen (x, dan y, dan z)
+function rot3(ax, ay, az) {
+  const [cx, sx, cy, sy, cz, sz] = [Math.cos(ax), Math.sin(ax), Math.cos(ay), Math.sin(ay), Math.cos(az), Math.sin(az)];
+  return ([x, y, z]) => { const y1 = y * cx - z * sx, z1 = y * sx + z * cx, x2 = x * cy + z1 * sy, z2 = -x * sy + z1 * cy; return [x2 * cz - y1 * sz, x2 * sz + y1 * cz, z2]; };
+}
+// gedraaide kubus: zichtbare vlakken dun, omtrek donker
+function kubus(g, c, h, M) {
+  const V = []; for (const x of [-h, h]) for (const y of [-h, h]) for (const z of [-h, h]) { const v = M([x, y, z]); V.push([c[0] + v[0], c[1] + v[1], c[2] + v[2]]); }
+  const F6 = [[[0, 1, 3, 2], [-1, 0, 0]], [[4, 6, 7, 5], [1, 0, 0]], [[0, 4, 5, 1], [0, -1, 0]], [[2, 3, 7, 6], [0, 1, 0]], [[0, 2, 6, 4], [0, 0, -1]], [[1, 5, 7, 3], [0, 0, 1]]];
+  for (const [idx, n] of F6) { const w = M(n); if (w[0] * VIEW[0] + w[1] * VIEW[1] + w[2] * VIEW[2] > 1e-3) g.face(idx.map(i => V[i]), { tone: 'mid' }); }
+  g.draw(hull(g.pp(V)), { tone: 'hi', fill: false });
+}
+// gedraaide cilinder: omtrek plus het deksel dat naar je toe wijst
+function cilinder(g, c, r, hh, M) {
+  const ring = dz => circ(0, 0, r, 40).map(([x, y]) => { const v = M([x, y, dz]); return [c[0] + v[0], c[1] + v[1], c[2] + v[2]]; });
+  const up = M([0, 0, 1]), boven = up[0] * VIEW[0] + up[1] * VIEW[1] + up[2] * VIEW[2] > 0;
+  g.prism(ring(boven ? -hh : hh), ring(boven ? hh : -hh), { sil: 'hi', tone: 'hi' });
+}
 F.io = { span: 9, zc: 1.6, floor: 5.2, draw(g, s) {
-  const R = 2.6, Hh = 3.4;
+  const R = 2.6, Hh = 3.4, dt = Math.min(s.dt, .05);
   room(g, R, Hh);
   const u = g.U(s.mx, s.my, 1.3);
-  const O = [{ k: 0, x: -1.15, y: -.95, b: .95 }, { k: 1, x: 1.2, y: -.8, b: 1.5 }, { k: 2, x: .2, y: 1.2, b: .7 }];
-  O.forEach((o, i) => { const d2 = (u[0] - o.x) ** 2 + (u[1] - o.y) ** 2; o.z = o.b + .16 * Math.sin(s.t * 1.1 + i * 2.1) + 1.1 * Math.exp(-d2 / 2) * s.act + .35 * s.kick; });
+  // dicht bij de vloer beginnen; een kritisch gedempte veer laat ze soepel optrekken, opstijgen en uitzweven
+  const O = [{ k: 0, x: -1.15, y: -.95, b: .2, h: .55 }, { k: 1, x: 1.2, y: -.8, b: .28, h: .5 }, { k: 2, x: .2, y: 1.2, b: .14, h: .62 }];
+  const m = s.mem; if (!m.veer) m.veer = O.map((_, i) => ({ z: 0, v: 0, f: [i * 2.1 + .4, i * 1.3 + 2.2, i * 2.7 + 1.1] }));
+  O.forEach((o, i) => {
+    const V = m.veer[i], d2 = (u[0] - o.x) ** 2 + (u[1] - o.y) ** 2, doel = (1.75 * Math.exp(-d2 / 2.4) + .2) * s.act + .25 * s.kick, w = 2.1;
+    V.v += (w * w * (doel - V.z) - 2 * w * V.v) * dt; V.z += V.v * dt;
+    const zweef = smooth(clamp(V.z / 1.2)), f = V.f, t = s.t;
+    o.z = o.b + V.z + (.03 + .09 * zweef) * Math.sin(t * .9 + f[0]);
+    const amp = .04 + .3 * zweef;
+    o.M = rot3(amp * Math.sin(t * .37 + f[1]), amp * Math.sin(t * .29 + f[2]), .12 * Math.sin(t * .21 + f[0]) + amp * .8 * Math.sin(t * .17 + f[1]));
+  });
   for (const o of O) {
     g.loop(atZ(o.k === 0 ? rr(o.x, o.y, 1.1, 1.1, 0, 0, 1) : circ(o.x, o.y, .6, 28), 0), { tone: 'edge', dash: [1, 3] });
     g.line([[o.x, o.y, 0], [o.x, o.y, o.z]], { tone: 'mid', dash: [1, 3] });
@@ -807,11 +835,12 @@ F.io = { span: 9, zc: 1.6, floor: 5.2, draw(g, s) {
   const lijn = s.mini ? null : lijnStap(s, u, R, Hh);
   let top = 0;
   for (const o of O) {
+    const c = [o.x, o.y, o.z + o.h];
     // lijnstukken die verder weg liggen dan dit object eerst tekenen; het object dekt ze dan af
-    if (lijn) lijnTeken(g, lijn, diepte(o.x, o.y, o.z + .55));
-    if (o.k === 0) g.box(o.x - .55, o.y - .55, o.z, 1.1, 1.1, 1.1, { sil: 'hi' });
-    else if (o.k === 1) g.cyl(o.x, o.y, o.z, .6, 1, { sil: 'hi', tone: 'hi' });
-    else wire(g, o.x, o.y, o.z + .62, .62, .62, s.t * .5, { mer: 3 });
+    if (lijn) lijnTeken(g, lijn, diepte(c[0], c[1], c[2]));
+    if (o.k === 0) kubus(g, c, .55, o.M);
+    else if (o.k === 1) cilinder(g, c, .6, .5, o.M);
+    else wire(g, c[0], c[1], c[2], .62, .62, s.t * .25, { mer: 3, M: o.M });
     top = Math.max(top, o.z);
   }
   if (lijn) lijnTeken(g, lijn, Infinity);
