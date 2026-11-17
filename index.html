@@ -99,7 +99,16 @@ main{position:relative;min-height:0}
 .p-foot{display:flex;justify-content:space-between;padding-top:.5rem}
 .col-h{display:flex;justify-content:space-between;align-items:baseline;font-family:var(--head);font-size:1.3rem;font-weight:700;letter-spacing:0;padding-bottom:.7rem;border-bottom:1px solid var(--ink)}
 .p-vak{grid-template-rows:auto minmax(0,1fr) auto}
-.vaklist{overflow:auto;min-height:0}
+.vaklist{overflow:auto;min-height:0;transition:opacity .22s ease}
+.vaklist.swap,.vakinfo.swap{opacity:0}
+.vakinfo{transition:opacity .22s ease}
+.vaklist.dense .vak{padding:.44rem 0;min-height:2.55rem}
+.vak .tag{margin-left:auto;padding:.12rem .45rem;border:1px solid var(--lo);border-radius:.4rem;font-size:.66rem;color:var(--edge);font-weight:400}
+.vak[aria-pressed="true"] .tag{border-color:var(--ink);color:var(--ink)}
+.stage-card{display:grid;gap:.9rem;align-content:start;padding:1.6rem 0 0}
+.stage-card .chip{width:3.2rem;height:3.2rem;border-radius:.7rem;display:grid;place-items:center;background:var(--y3);font-family:var(--mono);font-size:1.3rem;font-weight:500}
+.stage-card h4{margin:0;font-family:var(--head);font-size:2.3rem;font-weight:900;letter-spacing:-.02em;line-height:1.05;text-wrap:balance}
+.stage-card p{font-size:1.2rem;color:var(--edge);max-width:34ch;text-wrap:pretty}
 .vak{display:flex;align-items:center;gap:.8rem;width:100%;padding:.62rem 0;border-bottom:1px solid var(--lo);font-family:var(--head);font-size:1.25rem;font-weight:400;letter-spacing:0;color:var(--edge);min-height:2.9rem;transition:color .2s ease,padding .3s cubic-bezier(.5,0,.1,1)}
 .vak::before{content:"";flex:none;width:0;height:2px;background:var(--accent);transition:width .3s cubic-bezier(.5,0,.1,1)}
 .vak[aria-pressed="true"]{color:var(--ink);font-weight:700}
@@ -250,7 +259,14 @@ const PROGS = [
       ['Vormgeving & Template','Vormgeven en sjablonen bouwen die je steeds opnieuw kunt gebruiken.'],
       ['Storytelling',STORY],
       ['Media','Begrijpen hoe media werken en wie je ermee bereikt.'],
-      ['Branding',BRAND] ] },
+      ['After Effects','Beeld, tekst en graphics in beweging brengen in After Effects.'],
+      ['Datavisualisatie','Cijfers en feiten omzetten in beeld dat je in één oogopslag snapt.'],
+      ['Branding',BRAND],
+      ['Projecten',PROJ] ],
+    jaren:[
+      ['Journalistiek','Beeldbewerking','Audio & Video','Illustratie','Fotografie','Vormgeving & Template','Storytelling','Media','Projecten'],
+      ['Journalistiek','Beeldbewerking','Audio & Video','Illustratie','Fotografie','Vormgeving & Template','Storytelling','Media','After Effects','Datavisualisatie','Branding','Projecten'],
+      null ] },
   { id:'grafisch-vormgever', name:'Grafisch Vormgever / Mediavormgever', short:'Grafisch Vormgever', fig:'gv',
     line:'Je laat beeld en letters samenwerken, van poster tot website.',
     vakken:[
@@ -263,8 +279,14 @@ const PROGS = [
       ['Kunstbeschouwing','Kijken naar kunst en vormgeving, en benoemen wat je ziet.'],
       ['Typografie','Letters kiezen, zetten en laten spreken.'],
       ['Webontwerp','Websites en schermen ontwerpen die prettig werken.'],
+      ['Interaction Design','Ontwerpen wat er gebeurt als iemand tikt, scrolt of kiest.'],
+      ['Datavisualisatie','Cijfers en feiten omzetten in beeld dat je in één oogopslag snapt.'],
       ['Branding',BRAND],
-      ['Projecten',PROJ] ] },
+      ['Projecten',PROJ] ],
+    jaren:[
+      ['Grafisch Vormgeven','Beeldbewerking','Layout','Film & Fotografie','Animatie','Illustratie','Webontwerp'],
+      ['Grafisch Vormgeven','Beeldbewerking','Layout','Film & Fotografie','Animatie','Illustratie','Kunstbeschouwing','Typografie','Interaction Design','Datavisualisatie','Branding','Projecten'],
+      null ] },
   { id:'immersief-ontwerper', name:'Immersief Ontwerper', short:'Immersief Ontwerper', fig:'io',
     line:'Je bedenkt en ontwerpt belevingen in 3D waar mensen middenin staan.',
     vakken:[
@@ -287,6 +309,15 @@ const PROGS = [
       ['Netwerktechnologie','Apparaten verbinden en laten samenwerken.'] ] }
 ];
 const YEARS = [['Basiskennis','School'],['Verdieping','School'],['Examinerende stage','Heel jaar']];
+const STAGE = 'Het hele jaar werk je bij een bedrijf. Daar laat je in de praktijk zien wat je kunt, en daar doe je ook je examens.';
+// de vakken voor de gekozen opleiding en het gekozen leerjaar; zonder jaargegevens alle vakken
+function vakkenVan(p, y) {
+  if (!p.jaren) return { list: p.vakken.map(v => [v[0], v[1], false]), perJaar: false };
+  const names = p.jaren[y];
+  if (!names) return { list: [], perJaar: true, stage: true };
+  const prev = y > 0 && p.jaren[y - 1] ? p.jaren[y - 1] : null;
+  return { list: names.map(n => { const v = p.vakken.find(x => x[0] === n); return [n, v ? v[1] : '', !!prev && !prev.includes(n)]; }), perJaar: true };
+}
 const VERBS = [
   ['zien','Zien','Eerst kijken. Dan pas maken.'],
   ['maken','Maken','Blok voor blok bouw je iets dat er nog niet was.'],
@@ -860,7 +891,7 @@ let lastTouch = performance.now(), verbUser = -1e9, yearUser = -1e9, valUser = -
 
 // start
 $('verbs').innerHTML = VERBS.map((v, i) => `<button type="button" role="tab" data-verb="${i}" aria-selected="false">${v[1]}</button>`).join('');
-$('tiles').innerHTML = PROGS.map((p, i) => `<button type="button" class="tile" data-prog="${i}"><div class="fig" id="tile${i}"></div><div><h3>${p.name}</h3><p class="mono">${p.vakken.length} vakken · 3 leerjaren</p></div><span class="go">${ARROW}</span></button>`).join('');
+$('tiles').innerHTML = PROGS.map((p, i) => `<button type="button" class="tile" data-prog="${i}"><div class="fig" id="tile${i}"></div><div><h3>${p.name}</h3><p class="mono">${p.jaren ? new Set(p.jaren.filter(Boolean).flat()).size : p.vakken.length} vakken · 3 leerjaren</p></div><span class="go">${ARROW}</span></button>`).join('');
 $('dock').innerHTML = `<button type="button" data-view="start">Start</button>` + PROGS.map((p, i) => `<button type="button" data-prog="${i}">${p.short}</button>`).join('') + `<button type="button" data-view="waarden">Kernwaarden</button>`;
 $('years').innerHTML = YEARS.map((y, i) => `<button type="button" class="year" data-year="${i}" aria-pressed="false"><span class="chip">${i + 1}</span><span><b>${y[0]}</b><span class="mono">Leerjaar ${i + 1}</span></span><span class="mono">${y[1]}</span></button>`).join('');
 $('vals').innerHTML = VALUES.map((v, i) => `<button type="button" class="val" data-val="${i}" aria-pressed="false"><span class="mono">${i + 1}</span>${v}</button>`).join('');
@@ -879,16 +910,43 @@ function setVerb(i, user) {
   if (user === 'init' || RM) apply(); else { stage.classList.add('swap'); setTimeout(apply, 240); }
   document.querySelectorAll('[data-verb]').forEach(b => b.setAttribute('aria-selected', String(+b.dataset.verb === i)));
 }
+let cur = { list: [] };
 function setVak(i) {
-  st.vak = i; const v = PROGS[st.prog].vakken[i];
+  if (!cur.list.length) return;
+  i = clamp(i, 0, cur.list.length - 1); st.vak = i; const v = cur.list[i];
   document.querySelectorAll('.vak').forEach((b, k) => b.setAttribute('aria-pressed', String(k === i)));
-  $('vakinfo').innerHTML = `<span class="mono">Vak ${i + 1} van ${PROGS[st.prog].vakken.length}</span><p>${v[1]}</p>`;
+  const waar = cur.perJaar ? ' in leerjaar ' + (st.year + 1) : '';
+  $('vakinfo').innerHTML = `<span class="mono">Vak ${i + 1} van ${cur.list.length}${waar}</span><p>${v[1]}</p>`;
   pfig.s.kick = 1;
 }
+function renderVakken(animate) {
+  const p = PROGS[st.prog], keep = cur.list[st.vak] && cur.list[st.vak][0];
+  const apply = () => {
+    cur = vakkenVan(p, st.year);
+    const list = $('vaklist'), info = $('vakinfo');
+    if (cur.stage) {
+      $('vak-n').textContent = 'Leerjaar ' + (st.year + 1);
+      list.classList.remove('dense');
+      list.innerHTML = `<div class="stage-card"><span class="chip">3</span><h4>Heel jaar examinerende stage</h4><p>${STAGE}</p></div>`;
+      info.innerHTML = '';
+    } else {
+      $('vak-n').textContent = (cur.perJaar ? 'Leerjaar ' + (st.year + 1) + ' · ' : '') + cur.list.length + ' vakken';
+      list.classList.toggle('dense', cur.list.length > 11);
+      list.innerHTML = cur.list.map((v, k) => `<button type="button" class="vak" data-vak="${k}" aria-pressed="false">${v[0]}</button>`).join('');
+      const at = keep ? cur.list.findIndex(v => v[0] === keep) : -1;
+      setVak(at >= 0 ? at : 0);
+    }
+    list.scrollTop = 0;
+    list.classList.remove('swap'); info.classList.remove('swap');
+  };
+  if (animate && !RM) { $('vaklist').classList.add('swap'); $('vakinfo').classList.add('swap'); setTimeout(apply, 220); } else apply();
+}
 function setYear(i, user) {
+  const changed = st.year !== i;
   st.year = i; yearAt = performance.now(); if (user) yearUser = yearAt;
   trap.s.sel = i;
   document.querySelectorAll('.year').forEach((b, k) => b.setAttribute('aria-pressed', String(k === i)));
+  if (PROGS[st.prog].jaren && changed) renderVakken(true);
 }
 function setVal(i, user) {
   st.val = i; valAt = performance.now(); if (user) valUser = valAt;
@@ -900,11 +958,9 @@ function setVal(i, user) {
 }
 function setProg(i) {
   const p = PROGS[i]; st.prog = i;
-  $('p-name').textContent = p.name; $('p-line').textContent = p.line; $('vak-n').textContent = p.vakken.length + ' vakken';
-  $('vaklist').innerHTML = p.vakken.map((v, k) => `<button type="button" class="vak" data-vak="${k}" aria-pressed="false">${v[0]}</button>`).join('');
-  $('vaklist').scrollTop = 0;
+  $('p-name').textContent = p.name; $('p-line').textContent = p.line;
   pfig.setDef(F[p.fig]);
-  setVak(0); setYear(0);
+  st.vak = 0; cur = { list: [] }; setYear(0); renderVakken(false);
 }
 function go(view, prog, silent) {
   if (view === 'prog') setProg(prog == null ? st.prog : prog);
@@ -925,7 +981,7 @@ document.addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b) return;
   const d = b.dataset;
   if (d.verb != null) setVerb(+d.verb, true);
-  else if (d.vak != null) setVak(+d.vak);
+  else if (d.vak != null) { setVak(+d.vak); yearUser = performance.now(); }
   else if (d.year != null) setYear(+d.year, true);
   else if (d.val != null) setVal(+d.val, true);
   else if (d.prog != null) go('prog', +d.prog);
@@ -943,7 +999,7 @@ setInterval(() => {
   if (RM) return;
   if (now - lastTouch > IDLE && st.view !== 'start') { go('start'); verbUser = -1e9; }
   if (st.view === 'start' && now - verbUser > HOLD && now - verbAt > 7500) setVerb((st.verb + 1) % VERBS.length);
-  if (st.view === 'prog' && now - yearUser > HOLD && now - yearAt > 3600) setYear((st.year + 1) % 3);
+  if (st.view === 'prog' && now - yearUser > HOLD && now - yearAt > (PROGS[st.prog].jaren ? 8000 : 3600)) setYear((st.year + 1) % 3);
   if (st.view === 'waarden' && now - valUser > HOLD && now - valAt > 4200) setVal((st.val + 1) % VALUES.length);
 }, 500);
 
@@ -957,7 +1013,7 @@ function loop(now) {
 function start(saved) {
   Object.assign(st, saved && saved.view ? saved : {});
   setVerb(st.verb, 'init'); setProg(st.prog); setYear(st.year); setVal(st.val, 'init');
-  if (saved && saved.view) { go(st.view, st.prog, true); if (st.view === 'prog') setVak(Math.min(saved.vak || 0, PROGS[st.prog].vakken.length - 1)); }
+  if (saved && saved.view) { go(st.view, st.prog, true); if (st.view === 'prog') { setYear(saved.year || 0); renderVakken(false); setVak(saved.vak || 0); } }
   else fromHash();
   requestAnimationFrame(loop);
 }
