@@ -246,6 +246,12 @@ const STORY = 'Een verhaal opbouwen dat blijft hangen.';
 const BRAND = 'Een merk een eigen gezicht en een eigen stem geven.';
 const PROJ = 'Samen aan opdrachten werken, van eerste idee tot eindproduct.';
 
+const IXD = 'Ontwerpen wat er gebeurt als iemand iets aanraakt, beweegt of kiest.';
+const LICHT = 'Lampen ophangen, richten en aansturen.';
+const NETWERK = 'Apparaten verbinden en laten samenwerken.';
+const XR = 'Werken met virtuele en gemengde werelden.';
+// Immersief Ontwerper en Immersief Technicus hebben in leerjaar 1 dezelfde vakken
+const JAAR1_IMM = ['Vormgeving','Storytelling','3D-Ontwerp','Interactief Ontwerp','Lichttechniek','Netwerk','Projecten'];
 const PROGS = [
   { id:'content-creator', name:'Content Creator', short:'Content Creator', fig:'cc',
     line:'Je maakt verhalen voor elk scherm. Je schrijft, filmt, monteert en publiceert.',
@@ -295,18 +301,36 @@ const PROGS = [
       ['Storytelling',STORY],
       ['Branding',BRAND],
       ['3D-Ontwerp','Objecten en ruimtes bouwen in 3D.'],
-      ['Interactief ontwerp','Ontwerpen wat er gebeurt als iemand iets aanraakt, beweegt of kiest.'],
-      ['Projecten',PROJ] ] },
+      ['Interactief Ontwerp',IXD],
+      ['Lichttechniek',LICHT],
+      ['Netwerk',NETWERK],
+      ['Sounddesign','Geluid ontwerpen dat een ruimte of beleving tot leven brengt.'],
+      ['Lichtontwerp','Met licht een sfeer en een verhaal in een ruimte maken.'],
+      ['VR/AR/Mixed Reality',XR],
+      ['Projecten',PROJ] ],
+    jaren:[
+      JAAR1_IMM,
+      ['Vormgeving','Conceptontwikkeling','Storytelling','Branding','Interactief Ontwerp','3D-Ontwerp','Sounddesign','Lichtontwerp','VR/AR/Mixed Reality','Projecten'],
+      null ] },
   { id:'immersief-technicus', name:'Immersief Technicus', short:'Immersief Technicus', fig:'it',
     line:'Je laat de beleving werken, met licht, geluid, code en techniek.',
     vakken:[
+      ['Vormgeving','Vorm, kleur en compositie als basis voor alles wat je maakt.'],
+      ['Storytelling',STORY],
+      ['3D-Ontwerp','Objecten en ruimtes bouwen in 3D.'],
+      ['Interactief Ontwerp',IXD],
+      ['Lichttechniek',LICHT],
+      ['Netwerk',NETWERK],
       ['Licht & Geluidtechniek','Licht en geluid opbouwen, afstellen en bedienen.'],
       ['Audio/Video','Beeld en geluid opnemen, mixen en afspelen.'],
       ['Podiumtechniek','De techniek op en rond het podium.'],
       ['Coderen','Programmeren, zodat techniek doet wat jij wilt.'],
-      ['VR/AR/Mixed Reality','Werken met virtuele en gemengde werelden.'],
-      ['Interactief Ontwerpen','Installaties maken die reageren op het publiek.'],
-      ['Netwerktechnologie','Apparaten verbinden en laten samenwerken.'] ] }
+      ['VR/AR/Mixed Reality',XR],
+      ['Projecten',PROJ] ],
+    jaren:[
+      JAAR1_IMM,
+      ['Licht & Geluidtechniek','Audio/Video','Podiumtechniek','Coderen','Interactief Ontwerp','VR/AR/Mixed Reality','Projecten'],
+      null ] }
 ];
 const YEARS = [['Basiskennis','School'],['Verdieping','School'],['Examinerende stage','Heel jaar']];
 const STAGE = 'Het hele jaar werk je bij een bedrijf. Daar laat je in de praktijk zien wat je kunt, en daar doe je ook je examens.';
@@ -397,7 +421,7 @@ class G {
     for (let i = 1; i < p.length; i++) c.lineTo(p[i][0], p[i][1]);
     if (closed) c.closePath();
     if (closed && o.fill !== false) { c.fillStyle = o.fc || COL.bg; if (o.fa != null) c.globalAlpha = clamp(o.fa); c.fill(); c.globalAlpha = 1; }
-    c.strokeStyle = COL[o.tone || 'mid']; c.lineWidth = this.sw * (o.w || 1);
+    c.strokeStyle = o.col || COL[o.tone || 'mid']; c.lineWidth = this.sw * (o.w || 1);
     c.setLineDash(o.dash ? o.dash.map(v => v * this.sw * 1.7) : NODASH);
     if (o.alpha != null) c.globalAlpha = clamp(o.alpha);
     c.stroke(); c.globalAlpha = 1;
@@ -700,6 +724,46 @@ function room(g, R, Hh) {
   g.prism(atZ(fl, -.14), atZ(fl, 0), { sil: 'hi', tone: 'hi' });
   for (const k of [1, 2]) { const q = -R + k * 2 * R / 3; g.line([[q, -R, 0], [q, R, 0]], { tone: 'lo' }); g.line([[-R, q, 0], [R, q, 0]], { tone: 'lo' }); }
 }
+// een groene lijn die vanuit de cursor ontstaat, soepel door de ruimte zwieren en weer oplossen
+const LIJN = [tok('y3')], LEEF = 2.1, STAART = 1.25;
+function lijnen(g, s, u, R, Hh) {
+  const m = s.mem; if (!m.lijn) m.lijn = [{ pts: [], head: null, wacht: 0 }];
+  const now = s.t, lim = R - .25, dt = Math.min(s.dt, .05);
+  m.lijn.forEach((L, i) => {
+    L.wacht -= dt;
+    if (!L.head && L.wacht <= 0 && s.act > .4) {
+      const a = Math.random() * TAU;
+      L.head = { x: clamp(u[0], -lim, lim), y: clamp(u[1], -lim, lim), z: 1.3, a, va: (Math.random() - .5) * 4, vz: (Math.random() - .3) * 1.6, sp: 2.6 + Math.random() * .8, t0: now, f: Math.random() * TAU };
+    }
+    const h = L.head;
+    if (h) {
+      const age = now - h.t0;
+      h.va += (Math.sin(now * 2.3 + h.f) * 5 - h.va * .8) * dt;
+      h.a += h.va * dt;
+      h.vz += (Math.sin(now * 1.7 + h.f * 2) * 2.2 - h.vz * .6) * dt;
+      h.x += Math.cos(h.a) * h.sp * dt; h.y += Math.sin(h.a) * h.sp * dt; h.z += h.vz * dt;
+      if (Math.abs(h.x) > lim) { h.x = Math.sign(h.x) * lim; h.a = Math.PI - h.a; }
+      if (Math.abs(h.y) > lim) { h.y = Math.sign(h.y) * lim; h.a = -h.a; }
+      if (h.z < .15 || h.z > Hh - .2) { h.z = clamp(h.z, .15, Hh - .2); h.vz = -h.vz; }
+      L.pts.push([h.x, h.y, h.z, now]);
+      if (age > LEEF) { L.head = null; L.wacht = .25 + Math.random() * .35; }
+    }
+    while (L.pts.length && now - L.pts[0][3] > STAART) L.pts.shift();
+    const P = L.pts.map(q => g.P(q[0], q[1], q[2])), c = g.c;
+    c.setLineDash(NODASH); c.strokeStyle = LIJN[i]; c.lineWidth = g.sw * 2.8; c.lineCap = 'butt';
+    // in stukken van een paar punten tekenen: vloeiende lijn, en toch een staart die vervaagt
+    for (let k = 0; k < P.length - 1; k += 5) {
+      const e = Math.min(P.length - 1, k + 5);
+      c.globalAlpha = clamp(1 - (now - L.pts[e][3]) / STAART);
+      c.beginPath(); c.moveTo(P[k][0], P[k][1]);
+      for (let j = k + 1; j <= e; j++) c.lineTo(P[j][0], P[j][1]);
+      c.stroke();
+    }
+    c.lineCap = 'round';
+    c.globalAlpha = 1;
+    if (h && P.length) { const q = P[P.length - 1]; c.beginPath(); c.arc(q[0], q[1], g.sw * 2.6, 0, TAU); c.fillStyle = LIJN[i]; c.fill(); }
+  });
+}
 F.io = { span: 9, zc: 1.6, floor: 5.2, draw(g, s) {
   const R = 2.6, Hh = 3.4;
   room(g, R, Hh);
@@ -718,6 +782,7 @@ F.io = { span: 9, zc: 1.6, floor: 5.2, draw(g, s) {
     else wire(g, o.x, o.y, o.z + .62, .62, .62, s.t * .5, { mer: 3 });
     top = Math.max(top, o.z);
   }
+  if (!s.mini) lijnen(g, s, u, R, Hh);
   return 'hoogte ' + top.toFixed(2);
 } };
 
